@@ -1,0 +1,68 @@
+import schedule
+import time
+import requests
+from datetime import datetime, timedelta
+
+# Nessus API credentials and endpoint
+api_key = "your_api_key"
+url = "https://nessus_server:8834"
+
+# Headers for API requests
+headers = {
+    "X-ApiKeys": f"accessKey={api_key}",
+    "Content-Type": "application/json"
+}
+
+# Scan configuration parameters
+scan_name = "Monthly Scan"
+target = "192.168.1.0/24"
+policy_id = "policy_id"  # Replace with actual policy ID
+
+# Function to run the Nessus scan
+def run_scan():
+    scan_payload = {
+        "uuid": policy_id,
+        "settings": {
+            "name": scan_name,
+            "text_targets": target
+        }
+    }
+
+    response = requests.post(f"{url}/scans", json=scan_payload, headers=headers)
+
+    if response.status_code == 200:
+        scan_id = response.json()["scan"]["id"]
+        print("Scan successfully started. Scan ID:", scan_id)
+
+        # Retrieve scan results
+        scan_results = requests.get(f"{url}/scans/{scan_id}", headers=headers).json()
+
+        if scan_results["info"]["status"] == "completed":
+            report_id = scan_results["info"]["object_id"]
+            print("Scan completed. Retrieving results...")
+
+            # Fetch the scan report in Nessus format (nessus)
+            report_response = requests.get(f"{url}/scans/{scan_id}/export/{report_id}", headers=headers, params={"format": "nessus"})
+            report_filename = f"{scan_name}_{datetime.now().strftime('%Y-%m-%d')}_report.nessus"
+
+            with open(report_filename, "wb") as report_file:
+                report_file.write(report_response.content)
+
+            print("Scan results saved to:", report_filename)
+        else:
+            print("Scan did not complete successfully.")
+    else:
+        print("Failed to start scan.")
+
+# Calculate the next month's date
+def next_month_date():
+    current_date = datetime.now()
+    next_month = current_date + timedelta(days=30)
+    return next_month
+
+# Schedule the scan to run on the same day every month
+schedule.every().month.at(next_month_date().strftime("%Y-%m-%d") + " 02:00").do(run_scan)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
